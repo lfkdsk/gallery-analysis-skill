@@ -1,6 +1,6 @@
 ---
 name: gallery-animal-index
-description: Create or update animal indexes for gallery-style image repositories. Use when Codex needs to scan folders of photos for real animals, generate or maintain `.analysis/animal_index.json` and `.analysis/animal_index_guide.md`, use a thumbnail branch/worktree to reduce token cost, skip folders already marked complete in an existing index/guide, or audit and correct animal species assignments.
+description: Create or update animal indexes for gallery-style image repositories. Use when an agent needs to scan folders of photos for real animals, generate or maintain `.analysis/animal_index.json`, `.analysis/animal_index_guide.md`, and the per-folder scan cache under `.analysis/animal_scan_results/`, use a thumbnail branch/worktree to reduce token cost, incrementally process only newly added images via the scan cache, or audit and correct animal species assignments.
 ---
 
 # Gallery Animal Index
@@ -10,19 +10,20 @@ description: Create or update animal indexes for gallery-style image repositorie
 Write analysis artifacts under `.analysis/` in the target gallery repository:
 
 - `.analysis/animal_index.json`: grouped by bilingual animal species key, with values as repository-relative image paths.
-- `.analysis/animal_index_guide.md`: scan status, species summaries, workflow notes, and validation guidance.
+- `.analysis/animal_index_guide.md`: human-readable scan status, species summaries, and notes.
+- `.analysis/animal_scan_results/<folder>.json`: per-folder scan cache recording which images have already been processed (whether or not an animal was found). Future runs diff this cache against the folder's current contents to detect newly added images.
 
 Do not save contact sheets unless the user explicitly asks. Generate them in a temporary directory and delete them before finishing.
 
 ## Workflow
 
-1. Inspect the target repository structure and existing `.analysis/animal_index.json` / `.analysis/animal_index_guide.md`.
-2. If an existing guide marks a folder complete, skip that folder unless the user asks to audit or correct it.
-3. If an existing index already contains paths for a folder but the guide lacks status, infer likely completion conservatively and prefer auditing only new or unindexed folders.
+1. Inspect the target repository structure, existing `.analysis/animal_index.json`, `.analysis/animal_index_guide.md`, and the per-folder caches under `.analysis/animal_scan_results/`.
+2. For each folder, diff its current image list against the cache's `processed` list to find new or never-scanned images. Process only those, plus any folders the user explicitly asks to re-audit.
+3. If no cache file exists for a folder, treat every image in it as new.
 4. Use a thumbnail branch or worktree when available, usually `thumbnail` or `origin/thumbnail`, to avoid loading full-resolution images.
-5. Generate temporary contact sheets from thumbnails for batches of folders.
+5. Generate temporary contact sheets from thumbnails covering the new images.
 6. Read contact sheets first; open individual images only for ambiguous or species-critical cases.
-7. Write/update the index and guide. Validate JSON and that every indexed path exists in the main gallery tree.
+7. Write/update the index, guide, and scan cache. Validate JSON and that every indexed path exists in the main gallery tree.
 8. Remove temporary contact sheets unless explicitly requested to preserve them.
 
 ## Thumbnail Worktree
@@ -94,6 +95,36 @@ After final validation:
 rm -rf "$CONTACT_OUT"
 ```
 
+## Scan Cache
+
+Maintain per-folder scan caches under `.analysis/animal_scan_results/`. The cache is the source of truth for "what has already been processed"; the guide is just a human-readable narrative on top of it.
+
+Filename: take the folder path relative to the gallery root, replace `/` with `__`, append `.json`. Use `_root.json` for images at the gallery root.
+
+Format:
+
+```json
+{
+  "_meta": {
+    "folder": "yakushima",
+    "last_scan": "YYYY-MM-DD",
+    "thumbnail_source": "origin/thumbnail"
+  },
+  "processed": [
+    "yakushima/IMG_0001.webp",
+    "yakushima/IMG_0002.webp"
+  ]
+}
+```
+
+`processed` lists every image (gallery-root-relative path) that has been examined, regardless of whether an animal was identified. To plan an incremental run:
+
+1. Enumerate the folder's current image files.
+2. Subtract the entries in `processed`.
+3. The remainder is the new work for this run.
+
+Always update the cache when a folder's scan finishes (or partially advances). Append to `processed`, do not rewrite from scratch — except when the user explicitly asks to re-audit, in which case ignore the cache for that folder and replace it on completion.
+
 ## Animal Inclusion Rules
 
 Include:
@@ -154,14 +185,24 @@ Before writing a path:
 
 ## Guide Update Rules
 
-Keep `.analysis/animal_index_guide.md` current:
+Keep `.analysis/animal_index_guide.md` as a human-readable narrative. The scan cache (not the guide) decides what gets re-scanned, so the guide does not need machine-parsable status flags.
 
-- List scanned folders and status.
-- Summarize animals found per folder.
-- List remaining unscanned folders, if any.
-- Remove stale “partial” or “todo” statements once completed.
+Use one section per folder with this shape:
+
+```text
+### <folder>
+
+- Last scanned: YYYY-MM-DD
+- Processed: <N> images
+- Animals: <comma-separated species keys, or "none">
+- Notes: <optional free-form remarks>
+```
+
+Other rules:
+
+- Remove stale “partial” / “todo” statements once a folder is fully processed.
 - Do not hard-code machine-specific absolute paths.
-- Mention that future runs may skip folders already marked complete in the guide/index.
+- Note that incremental runs only re-scan images missing from `.analysis/animal_scan_results/`; folders with newly added images will be partially re-processed automatically.
 
 ## Validation
 
@@ -189,7 +230,7 @@ for key, paths in index.items():
 print('missing', len(missing))
 print('duplicates', len(dups))
 if missing:
-    print('\\n'.join(missing))
+    print('\n'.join(missing))
 PY
 ```
 
