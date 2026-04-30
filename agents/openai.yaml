@@ -1,0 +1,4 @@
+interface:
+  display_name: "Gallery Animal Index"
+  short_description: "Build animal indexes for gallery-style image folders."
+  default_prompt: "Analyze a gallery-style image repository for real animals and write .analysis/animal_index.json plus .analysis/animal_index_guide.md."

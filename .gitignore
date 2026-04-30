@@ -1,0 +1,14 @@
+# Temporary contact sheets and local run artifacts
+contact_sheets/
+.analysis/
+*.contact.jpg
+*_contact.jpg
+
+# Python/runtime caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local environment files
+.env
+.DS_Store
