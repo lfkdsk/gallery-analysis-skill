@@ -1,11 +1,46 @@
 ---
-name: gallery-animal-index
-description: Create or update animal indexes for gallery-style image repositories. Use when an agent needs to scan folders of photos for real animals, generate or maintain `.analysis/animal_index.json`, `.analysis/animal_index_guide.md`, and the per-folder scan cache under `.analysis/animal_scan_results/`, use a thumbnail branch/worktree to reduce token cost, incrementally process only newly added images via the scan cache, or audit and correct animal species assignments.
+name: gallery-analysis
+description: Analyze gallery-style image repositories and maintain reusable artifacts under `.analysis/`. Use when Codex needs to create dense annual photo-collage backgrounds grouped by EXIF or album year, generate year-named WebP backgrounds and an annual-summary index, scan photos for real animals, maintain animal indexes and incremental scan caches, use a thumbnail branch/worktree to reduce image-processing cost, or audit existing gallery analysis results.
 ---
 
-# Gallery Animal Index
+# Gallery Analysis
 
-## Outputs
+## Choose a workflow
+
+- For annual photo-wall backgrounds, follow **Annual Summary Collages** and run `scripts/build_year_collages.py`.
+- For animal discovery and species indexing, follow **Animal Index**.
+- When asked for both, run the workflows independently and keep all persistent outputs under `.analysis/` in the gallery repository.
+
+Prefer a `thumbnail` branch or worktree for image-heavy operations. Resolve metadata and repository-relative paths against the main gallery tree, and never write machine-specific absolute paths into analysis artifacts.
+
+## Annual Summary Collages
+
+Generate one dense 1920×1080 WebP photo wall per year. Determine the year from EXIF `DateTimeOriginal`; when EXIF is missing, fall back to the album `date` in `README.yml` when available.
+
+Write:
+
+- `.analysis/annual-summary/<year>-background.webp`: edge-to-edge annual photo wall.
+- `.analysis/annual-summary/index.json`: available years, latest year, total photo counts, and photos used per collage.
+
+Existing `.analysis/annual-summary/<year>.json` files may contain curated monthly image paths. Treat those images as anchors, then fill remaining cells with an even chronological sample from the whole year. Do not overwrite the curated JSON files.
+
+Run from the Skill directory:
+
+```bash
+python3 scripts/build_year_collages.py "$GALLERY_ROOT" \
+  --thumbnail-root "$THUMB_ROOT" \
+  --max-photos 60 \
+  --columns 10 \
+  --size 1920x1080
+```
+
+Omit `--thumbnail-root` when no thumbnail tree exists. The script requires Pillow; PyYAML is optional but needed for the `README.yml` album-date fallback.
+
+After generation, verify that every indexed year has a readable WebP under `.analysis/annual-summary/`. If the consuming site needs public assets, copy from this analysis directory during the site build; keep `.analysis/annual-summary/` as the canonical source.
+
+## Animal Index
+
+### Outputs
 
 Write analysis artifacts under `.analysis/` in the target gallery repository:
 
@@ -15,7 +50,7 @@ Write analysis artifacts under `.analysis/` in the target gallery repository:
 
 Do not save contact sheets unless the user explicitly asks. Generate them in a temporary directory and delete them before finishing.
 
-## Workflow
+### Workflow
 
 1. Inspect the target repository structure, existing `.analysis/animal_index.json`, `.analysis/animal_index_guide.md`, and the per-folder caches under `.analysis/animal_scan_results/`.
 2. For each folder, diff its current image list against the cache's `processed` list to find new or never-scanned images. Process only those, plus any folders the user explicitly asks to re-audit.
@@ -26,7 +61,7 @@ Do not save contact sheets unless the user explicitly asks. Generate them in a t
 7. Write/update the index, guide, and scan cache. Validate JSON and that every indexed path exists in the main gallery tree.
 8. Remove temporary contact sheets unless explicitly requested to preserve them.
 
-## Thumbnail Worktree
+### Thumbnail Worktree
 
 Prefer a temporary worktree outside the repo:
 
@@ -39,7 +74,7 @@ If `origin/thumbnail` is unavailable, try local `thumbnail`. If no thumbnail bra
 
 Never write index paths from the thumbnail worktree blindly. Always resolve the corresponding file in the main gallery tree and write the main-tree relative path.
 
-## Temporary Contact Sheets
+### Temporary Contact Sheets
 
 Generate contact sheets in a temp location such as `mktemp -d`, not in `.analysis/`, unless the user asks to keep them.
 
@@ -95,7 +130,7 @@ After final validation:
 rm -rf "$CONTACT_OUT"
 ```
 
-## Scan Cache
+### Scan Cache
 
 Maintain per-folder scan caches under `.analysis/animal_scan_results/`. The cache is the source of truth for "what has already been processed"; the guide is just a human-readable narrative on top of it.
 
@@ -125,7 +160,7 @@ Format:
 
 Always update the cache when a folder's scan finishes (or partially advances). Append to `processed`, do not rewrite from scratch — except when the user explicitly asks to re-audit, in which case ignore the cache for that folder and replace it on completion.
 
-## Animal Inclusion Rules
+### Animal Inclusion Rules
 
 Include:
 
@@ -142,7 +177,7 @@ Exclude:
 
 When uncertain, use a conservative broader key such as `海鸥（属） / Gull sp. (Larus sp.)` rather than over-identifying.
 
-## Species Key Format
+### Species Key Format
 
 Use:
 
@@ -158,7 +193,7 @@ Examples:
 
 For cats, split by visible color pattern when useful. For wildlife, identify as precisely as the image supports.
 
-## Index Update Rules
+### Index Update Rules
 
 Use JSON like:
 
@@ -183,7 +218,7 @@ Before writing a path:
 3. Skip orphan thumbnails that do not exist in the main tree.
 4. Deduplicate paths within each species key.
 
-## Guide Update Rules
+### Guide Update Rules
 
 Keep `.analysis/animal_index_guide.md` as a human-readable narrative. The scan cache (not the guide) decides what gets re-scanned, so the guide does not need machine-parsable status flags.
 
@@ -204,7 +239,7 @@ Other rules:
 - Do not hard-code machine-specific absolute paths.
 - Note that incremental runs only re-scan images missing from `.analysis/animal_scan_results/`; folders with newly added images will be partially re-processed automatically.
 
-## Validation
+### Validation
 
 Always run:
 
