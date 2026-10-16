@@ -29,7 +29,7 @@ Trigger it whenever you want an agent to:
 
 - The target repo is a git repository containing image folders (`.webp`, `.jpg`, `.jpeg`, `.png`).
 - (Optional but recommended) A `thumbnail` branch (or `origin/thumbnail`) carrying downscaled versions. The skill uses thumbnails to drastically cut token cost.
-- Python 3 with `Pillow` available, for generating contact sheets.
+- Python 3 with `Pillow` available, for generating contact sheets. Install `pillow-heif` too if the gallery contains `.HEIC` live photos.
 
 ### Quick start
 
@@ -113,7 +113,7 @@ If you want to verify manually, the snippet lives at the bottom of [SKILL.md](SK
 
 - 目标仓库是 git 仓库，里面有图片目录（`.webp` / `.jpg` / `.jpeg` / `.png`）。
 - （可选但强烈推荐）有 `thumbnail` 分支（或 `origin/thumbnail`）放缩略图。skill 会用缩略图来**大幅降低 token 消耗**。
-- Python 3，并装好 `Pillow`，用于生成联系底片（contact sheet）。
+- Python 3，并装好 `Pillow`，用于生成联系底片（contact sheet）。如果相册里有 `.HEIC` 实况照片，还需要装 `pillow-heif`。
 
 ### 快速使用
 
