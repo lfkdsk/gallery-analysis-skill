@@ -19,7 +19,7 @@ Do not save contact sheets unless the user explicitly asks. Generate them in a t
 
 1. Inspect the target repository structure, existing `.analysis/animal_index.json`, `.analysis/animal_index_guide.md`, and the per-folder caches under `.analysis/animal_scan_results/`.
 2. For each folder, diff its current image list against the cache's `processed` list to find new or never-scanned images. Process only those, plus any folders the user explicitly asks to re-audit.
-3. If no cache file exists for a folder, treat every image in it as new.
+3. If no cache file exists for a folder, treat every image in it as new — unless the guide already records the folder as fully scanned (legacy runs from before the cache existed). In that case, treat only images added since the last commit touching `.analysis/` as new (`git log -1 --format=%H -- .analysis` then `git diff --name-only --diff-filter=A <sha>..HEAD`), and create the cache for that folder after the run.
 4. Use a thumbnail branch or worktree when available, usually `thumbnail` or `origin/thumbnail`, to avoid loading full-resolution images.
 5. Generate temporary contact sheets from thumbnails covering the new images.
 6. Read contact sheets first; open individual images only for ambiguous or species-critical cases.
@@ -35,9 +35,16 @@ git -C "$GALLERY_ROOT" fetch --all --prune
 git -C "$GALLERY_ROOT" worktree add "$THUMB_ROOT" origin/thumbnail
 ```
 
-If `origin/thumbnail` is unavailable, try local `thumbnail`. If no thumbnail branch exists, use the main gallery images and keep batches small.
+If `origin/thumbnail` is unavailable, try local `thumbnail`. If no thumbnail branch exists, use the main gallery images and keep batches small; the contact-sheet script downscales them anyway, so 16 images per sheet stays cheap.
 
 Never write index paths from the thumbnail worktree blindly. Always resolve the corresponding file in the main gallery tree and write the main-tree relative path.
+
+## Image Types
+
+- Scan `.webp`, `.jpg`, `.jpeg`, `.png`, and `.heic` (any case). Skip videos such as `.MOV`.
+- HEIC needs `pillow-heif` (`pip install pillow-heif`); register it before opening images. If it cannot be installed, list HEIC-only files as skipped in the final report and leave them out of the cache.
+- Live photos often appear as `NAME.jpg` + `NAME.HEIC` (+ `NAME.MOV`). Treat the HEIC as a duplicate of the `.jpg`: scan and index only the `.jpg`, but record both in the cache's `processed` list. A HEIC with no `.jpg` twin is a normal image.
+- Apply EXIF orientation (`ImageOps.exif_transpose`) when loading main-tree originals, or portrait photos render sideways.
 
 ## Temporary Contact Sheets
 
@@ -45,13 +52,18 @@ Generate contact sheets in a temp location such as `mktemp -d`, not in `.analysi
 
 ```bash
 python3 - <<'PY'
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 import os, math
+try:
+    import pillow_heif
+    pillow_heif.register_heif_opener()
+except ImportError:
+    pass
 
 thumb_root = os.environ['THUMB_ROOT']
 out_dir = os.environ['CONTACT_OUT']
 folders = os.environ['FOLDERS'].split(':')
-exts = ('.webp', '.jpg', '.jpeg', '.png', '.JPG', '.JPEG', '.PNG')
+exts = ('.webp', '.jpg', '.jpeg', '.png', '.heic')
 os.makedirs(out_dir, exist_ok=True)
 
 try:
@@ -61,7 +73,7 @@ except Exception:
 
 for folder in folders:
     dirp = os.path.join(thumb_root, folder) if folder else thumb_root
-    files = sorted(f for f in os.listdir(dirp) if f.endswith(exts))
+    files = sorted(f for f in os.listdir(dirp) if f.lower().endswith(exts))
     if not files:
         continue
     tw, th, lh, cols = 180, 135, 40, 5
@@ -69,7 +81,7 @@ for folder in folders:
     sheet = Image.new('RGB', (cols * tw, rows * (th + lh)), 'white')
     draw = ImageDraw.Draw(sheet)
     for i, name in enumerate(files):
-        im = Image.open(os.path.join(dirp, name)).convert('RGB')
+        im = ImageOps.exif_transpose(Image.open(os.path.join(dirp, name))).convert('RGB')
         im.thumbnail((tw, th), Image.Resampling.LANCZOS)
         x = (i % cols) * tw + (tw - im.width) // 2
         y = (i // cols) * (th + lh)
